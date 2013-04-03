@@ -8,7 +8,7 @@ RUN_MINIFY = true
 RUN_CRUSH = true
 
 SOURCE = 'source.js'
-CLOSURE_TARGET = 'minified.js'
+MINIFY_TARGET = 'minified.js'
 CRUSH_TARGET = 'crushed.js'
 CLOSURE_CMD = 'java -jar compiler/compiler.jar --externs externs.js --compilation_level ADVANCED_OPTIMIZATIONS --js %s --js_output_file %s'
 
@@ -16,30 +16,88 @@ CLOSURE_CMD = 'java -jar compiler/compiler.jar --externs externs.js --compilatio
 fs = require("fs")
 spawn = require('child_process').spawn
 crusher = require('./jscrush.js')
+uglify = require("uglify-js")
 
-if (RUN_MINIFY) runMinify()
-else if (RUN_CRUSH) runCrush()
+
+if (RUN_MINIFY)
+	runUglifyMinify()
+	// runClosureMinify()
+else if (RUN_CRUSH)
+	runCrush()
+
 
 function stringBytes(source) {
 	return encodeURI(source).replace(/%../g,'i').length
 }
 
-function postprocess(contents) {
-	contents = contents
-		.substring(contents.indexOf(';') + 1) // remove vars
-		.replace(/\b0[.]/g, '.') // remove leading 0s
+function runUglifyMinify() {
 
-	// remove trailing semicolon
-	contents = contents.substring(0, contents.length-1)
+	console.log('\nRunning minifier: uglify-js...')
 
-	// if you wish to debug postprocessed string
-	// console.log('\n' + contents + '\n')
-	return contents
+	raw = "(function(){"+fs.readFileSync(SOURCE).toString()+"})()"
 
+	ugly_options = {
+		// mangle_options: {except: ["e"]},
+		fromString: true,
+		mangle: true,
+		output: {
+			semicolons: true,
+			space_colon: false,
+			ie_proof: false
+		},
+		compress: {
+			unsafe: true,
+			hoist_vars: true,
+			join_vars: true
+		}
+		// warnings: true
+	}
+	ugly = uglify.minify(raw, ugly_options);
+
+	minified = ugly.code;
+
+	minified = minified.slice(12,-5)
+	if (ugly_options.output.semicolons)
+		minified = minified.substring(minified.indexOf(';') + 1) // remove vars
+	else {
+		minified = minified.split('\n');minified.shift(); minified = minified.join('\n')
+	}
+
+	// console.log(minified);
+	fs.writeFileSync(MINIFY_TARGET, minified, 'utf-8')
+	sourceSize = stringBytes(raw)
+	minifySize = stringBytes(minified)
+	diffSize = (minifySize - sourceSize)
+	console.log('' + sourceSize + 'B to ' + minifySize + 'B (' + diffSize +'B, ' + (diffSize / sourceSize * 1e4 | 0 )/ 100  + '%)..' )
+	console.log('Minified file compiled to ' + MINIFY_TARGET + '.')
+
+	if (RUN_CRUSH) runCrush()
 }
 
-function runMinify() {
-	cmd = format(CLOSURE_CMD, SOURCE, CLOSURE_TARGET)
+function runClosureMinify() {
+
+	function format(str) {
+		for (i=1;i<arguments.length;i++) {
+			str = str.replace('%s', arguments[i])
+		}
+		return str
+	}
+
+	function postprocess(contents) {
+		contents = contents
+			.substring(contents.indexOf(';') + 1) // remove vars
+			.replace(/\b0[.]/g, '.') // remove leading 0s
+
+		// remove trailing semicolon
+		contents = contents.substring(0, contents.length-1)
+
+		// if you wish to debug postprocessed string
+		// console.log('\n' + contents + '\n')
+		return contents
+
+	}
+
+	cmd = format(CLOSURE_CMD, SOURCE, MINIFY_TARGET)
 
 	console.log('\nRunning minifier: ' + cmd + '...')
 
@@ -59,13 +117,16 @@ function runMinify() {
 			console.error('Minify failed.')
 		} else {
 			source = fs.readFileSync(SOURCE, 'utf8')
-			contents = fs.readFileSync(CLOSURE_TARGET, 'utf8')
+			contents = fs.readFileSync(MINIFY_TARGET, 'utf8')
+			contents = postprocess(contents)
+			fs.writeFileSync(MINIFY_TARGET, contents, 'utf8')
+
 
 			sourceSize = stringBytes(source)
 			minifySize = stringBytes(contents)
 			diffSize = (minifySize - sourceSize)
 			console.log('' + sourceSize + 'B to ' + minifySize + 'B (' + diffSize +'B, ' + (diffSize / sourceSize * 1e4 | 0 )/ 100  + '%)..' )
-			console.log('Minified file compiled to ' + CLOSURE_TARGET + '.')
+			console.log('Minified file compiled to ' + MINIFY_TARGET + '.')
 
 			if (RUN_CRUSH) runCrush()
 		}
@@ -74,20 +135,12 @@ function runMinify() {
 
 
 function runCrush() {
-	console.log('\nRunning crusher on ' +  CLOSURE_TARGET + '...')
+	console.log('\nRunning crusher on ' +  MINIFY_TARGET + '...')
 
-	contents = fs.readFileSync(CLOSURE_TARGET, 'utf8')
-	contents = postprocess(contents)
+	contents = fs.readFileSync(MINIFY_TARGET, 'utf8')
 
 	crushed = crusher.crush(contents)
 	fs.writeFileSync(CRUSH_TARGET, crushed, 'utf8')
 	console.log('Crushed file written to ' + CRUSH_TARGET + '.')
 
-}
-
-function format(str) {
-	for (i=1;i<arguments.length;i++) {
-		str = str.replace('%s', arguments[i])
-	}
-	return str
 }

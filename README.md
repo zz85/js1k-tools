@@ -25,6 +25,9 @@ Each javascript file accompanying html files comes with each respective, so its 
 
 `externs.js` - for declaring variables to be untouch by closure.
 
+###Updates
+Supports uglify-js compiler now. uglify-js can be installed by running `npm install uglify-js`. Overall compression may be less but compiling is much faster.
+
 ###TODO
 Add Siorki's [RegPack](https://github.com/Siorki/RegPack) to save more bytes!
 
